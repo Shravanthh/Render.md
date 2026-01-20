@@ -14,6 +14,11 @@ mkdir -p "$BUNDLE_PATH/Contents/Resources"
 
 cp .build/release/MarkdownPreview "$BUNDLE_PATH/Contents/MacOS/RenderMD"
 
+# Copy icon
+if [ -f "AppIcon.icns" ]; then
+    cp AppIcon.icns "$BUNDLE_PATH/Contents/Resources/"
+fi
+
 cat > "$BUNDLE_PATH/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
