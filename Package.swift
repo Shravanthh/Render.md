@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "MarkdownPreview",
+    name: "RenderMD",
     platforms: [.macOS(.v13)],
     dependencies: [
         .package(url: "https://github.com/apple/swift-markdown.git", from: "0.3.0")
     ],
     targets: [
         .executableTarget(
-            name: "MarkdownPreview",
+            name: "RenderMD",
             dependencies: [.product(name: "Markdown", package: "swift-markdown")],
-            path: "MarkdownPreview"
+            path: "Sources"
         )
     ]
 )

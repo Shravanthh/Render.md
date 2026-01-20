@@ -12,7 +12,7 @@ rm -rf "$BUNDLE_PATH"
 mkdir -p "$BUNDLE_PATH/Contents/MacOS"
 mkdir -p "$BUNDLE_PATH/Contents/Resources"
 
-cp .build/release/MarkdownPreview "$BUNDLE_PATH/Contents/MacOS/RenderMD"
+cp .build/release/RenderMD "$BUNDLE_PATH/Contents/MacOS/RenderMD"
 
 # Copy icon
 if [ -f "AppIcon.icns" ]; then
