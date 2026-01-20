@@ -47,4 +47,10 @@ cat > "$BUNDLE_PATH/Contents/Info.plist" << 'PLIST'
 PLIST
 
 echo "✅ Built: $BUNDLE_PATH"
+
+# Clean extended attributes and ad-hoc sign
+xattr -cr "$BUNDLE_PATH"
+codesign --force --deep --sign - "$BUNDLE_PATH"
+echo "🔏 Signed: $BUNDLE_PATH"
+
 echo "To install: cp -R $BUNDLE_PATH /Applications/"
