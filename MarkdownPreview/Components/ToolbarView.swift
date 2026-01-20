@@ -6,93 +6,42 @@ struct ToolbarView: ToolbarContent {
     
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            fileMenu
-            previewToggle
-            themeMenu
+            Menu {
+                Button("New Tab ⌘T", action: appState.newTab)
+                Button("Open File ⌘O", action: openFiles)
+                Button("Open Folder", action: openFolder)
+                Divider()
+                Button("Save As...", action: saveAs)
+                Button("Export HTML", action: exportHTML)
+                Button("Export PDF", action: exportPDF)
+            } label: { Image(systemName: "doc.badge.plus") }.help("File Menu")
+            
+            Button { withAnimation { appState.showPreview.toggle() } } label: {
+                Image(systemName: appState.showPreview ? "rectangle.righthalf.filled" : "rectangle.fill")
+            }.help("Toggle Preview (⌘P)")
+            
+            Menu {
+                ForEach(Theme.all, id: \.name) { t in Button(t.name) { appState.theme = t } }
+            } label: { Image(systemName: "paintpalette") }.help("Change Theme")
         }
         
         ToolbarItemGroup {
             if appState.isFullscreen {
-                exitFullscreenButton
+                Button { NSApp.windows.first?.toggleFullScreen(nil) } label: {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                }.help("Exit Fullscreen")
             }
-            commandPaletteButton
-            findButton
-            saveButton
+            Button { appState.showCommandPalette = true } label: { Image(systemName: "command") }.help("Command Palette (⇧⌘P)")
+            Button { appState.showFind.toggle() } label: { Image(systemName: "magnifyingglass") }.help("Find (⌘F)")
+            Button(action: save) { Image(systemName: "square.and.arrow.down") }.help("Save (⌘S)")
         }
     }
     
-    // MARK: - Navigation Items
-    private var fileMenu: some View {
-        Menu {
-            Button("New Tab ⌘T") { appState.newTab() }
-            Button("Open File ⌘O") { openFiles() }
-            Button("Open Folder") { openFolder() }
-            Divider()
-            Button("Save As...") { saveAs() }
-            Button("Export HTML") { exportHTML() }
-            Button("Export PDF") { exportPDF() }
-        } label: {
-            Image(systemName: "doc.badge.plus")
-        }
-        .help("File Menu")
-    }
-    
-    private var previewToggle: some View {
-        Button {
-            withAnimation { appState.showPreview.toggle() }
-        } label: {
-            Image(systemName: appState.showPreview ? "rectangle.righthalf.filled" : "rectangle.fill")
-        }
-        .help("Toggle Preview (⌘P)")
-    }
-    
-    private var themeMenu: some View {
-        Menu {
-            ForEach(Theme.all, id: \.name) { theme in
-                Button(theme.name) { appState.theme = theme }
-            }
-        } label: {
-            Image(systemName: "paintpalette")
-        }
-        .help("Change Theme")
-    }
-    
-    // MARK: - Trailing Items
-    private var exitFullscreenButton: some View {
-        Button { toggleFullscreen() } label: {
-            Image(systemName: "arrow.down.right.and.arrow.up.left")
-        }
-        .help("Exit Fullscreen")
-    }
-    
-    private var commandPaletteButton: some View {
-        Button { appState.showCommandPalette = true } label: {
-            Image(systemName: "command")
-        }
-        .help("Command Palette (⇧⌘P)")
-    }
-    
-    private var findButton: some View {
-        Button { appState.showFind.toggle() } label: {
-            Image(systemName: "magnifyingglass")
-        }
-        .help("Find (⌘F)")
-    }
-    
-    private var saveButton: some View {
-        Button { save() } label: {
-            Image(systemName: "square.and.arrow.down")
-        }
-        .help("Save (⌘S)")
-    }
-    
-    // MARK: - Actions
     private func openFiles() {
-        for url in FileService.shared.openFiles() {
-            guard let content = FileService.shared.loadContent(from: url) else { continue }
-            let tab = Tab(name: url.lastPathComponent, content: content, filePath: url.path)
-            appState.tabs.append(tab)
-            appState.selectedTabId = tab.id
+        FileService.shared.openFiles().forEach { url in
+            guard let content = FileService.shared.loadContent(from: url) else { return }
+            appState.tabs.append(Tab(name: url.lastPathComponent, content: content, filePath: url.path))
+            appState.selectedTabId = appState.tabs.last?.id
         }
     }
     
@@ -105,34 +54,18 @@ struct ToolbarView: ToolbarContent {
     private func save() {
         guard let idx = appState.selectedIndex else { return }
         if let url = appState.tabs[idx].fileURL {
-            if FileService.shared.save(content: appState.tabs[idx].content, to: url) {
-                appState.tabs[idx].isModified = false
-            }
-        } else {
-            saveAs()
-        }
+            if FileService.shared.save(content: appState.tabs[idx].content, to: url) { appState.tabs[idx].isModified = false }
+        } else { saveAs() }
     }
     
     private func saveAs() {
-        guard let idx = appState.selectedIndex else { return }
-        if let url = FileService.shared.saveAs(content: appState.tabs[idx].content, suggestedName: appState.tabs[idx].name) {
-            appState.tabs[idx].fileURL = url
-            appState.tabs[idx].name = url.lastPathComponent
-            appState.tabs[idx].isModified = false
-        }
+        guard let idx = appState.selectedIndex,
+              let url = FileService.shared.saveAs(content: appState.tabs[idx].content, suggestedName: appState.tabs[idx].name) else { return }
+        appState.tabs[idx].fileURL = url
+        appState.tabs[idx].name = url.lastPathComponent
+        appState.tabs[idx].isModified = false
     }
     
-    private func exportHTML() {
-        guard let tab = appState.selectedTab else { return }
-        FileService.shared.exportHTML(content: tab.content, name: tab.name)
-    }
-    
-    private func exportPDF() {
-        guard let tab = appState.selectedTab else { return }
-        FileService.shared.exportPDF(content: tab.content, name: tab.name)
-    }
-    
-    private func toggleFullscreen() {
-        NSApplication.shared.windows.first?.toggleFullScreen(nil)
-    }
+    private func exportHTML() { guard let t = appState.selectedTab else { return }; FileService.shared.exportHTML(content: t.content, name: t.name) }
+    private func exportPDF() { guard let t = appState.selectedTab else { return }; FileService.shared.exportPDF(content: t.content, name: t.name) }
 }

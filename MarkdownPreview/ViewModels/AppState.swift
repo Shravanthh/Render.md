@@ -1,9 +1,7 @@
 // App State - Global Observable State
 import SwiftUI
-import Combine
 
 final class AppState: ObservableObject {
-    // MARK: - Published Properties
     @Published var tabs: [Tab] = []
     @Published var selectedTabId: UUID?
     @Published var theme: Theme = .dracula
@@ -12,130 +10,62 @@ final class AppState: ObservableObject {
     @Published var showSidebar = false
     @Published var showFind = false
     @Published var showCommandPalette = false
-    @Published var showGoToLine = false
     @Published var zenMode = false
     @Published var isFullscreen = false
     @Published var folderURL: URL?
     
-    // MARK: - Computed Properties
-    var selectedIndex: Int? {
-        tabs.firstIndex { $0.id == selectedTabId }
-    }
+    var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedTabId } }
+    var selectedTab: Tab? { selectedIndex.map { tabs[$0] } }
+    var wordCount: Int { selectedTab?.content.split { $0.isWhitespace || $0.isNewline }.count ?? 0 }
+    var lineCount: Int { selectedTab?.content.components(separatedBy: "\n").count ?? 0 }
+    var sortedTabs: [Tab] { tabs.sorted { $0.isPinned && !$1.isPinned } }
     
-    var selectedTab: Tab? {
-        guard let idx = selectedIndex else { return nil }
-        return tabs[idx]
-    }
+    private let stateKey = "appState"
+    private var autoSaveTimer: Timer?
     
-    var wordCount: Int {
-        selectedTab?.content.split { $0.isWhitespace || $0.isNewline }.count ?? 0
-    }
-    
-    var lineCount: Int {
-        selectedTab?.content.components(separatedBy: "\n").count ?? 0
-    }
-    
-    var sortedTabs: [Tab] {
-        tabs.sorted { ($0.isPinned ? 0 : 1) < ($1.isPinned ? 0 : 1) }
-    }
-    
-    // MARK: - Initialization
     init() {
         loadState()
-        if tabs.isEmpty {
-            tabs = [Tab.welcome()]
-            selectedTabId = tabs.first?.id
-        }
-        setupAutoSave()
+        if tabs.isEmpty { tabs = [Tab.welcome()]; selectedTabId = tabs.first?.id }
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.autoSave() }
     }
     
-    // MARK: - Tab Management
-    func newTab() {
-        let tab = Tab.untitled()
-        tabs.append(tab)
-        selectedTabId = tab.id
-    }
+    func newTab() { let tab = Tab.untitled(); tabs.append(tab); selectedTabId = tab.id }
     
     func closeTab(_ tab: Tab) {
         guard let idx = tabs.firstIndex(of: tab) else { return }
         tabs.remove(at: idx)
-        if selectedTabId == tab.id {
-            selectedTabId = tabs.indices.contains(idx) ? tabs[idx].id : tabs.last?.id
-        }
+        if selectedTabId == tab.id { selectedTabId = tabs.indices.contains(idx) ? tabs[idx].id : tabs.last?.id }
         if tabs.isEmpty { newTab() }
     }
     
-    func togglePin(_ tab: Tab) {
-        guard let idx = tabs.firstIndex(of: tab) else { return }
-        tabs[idx].isPinned.toggle()
-    }
-    
-    func updateContent(_ content: String) {
-        guard let idx = selectedIndex else { return }
-        tabs[idx].content = content
-        tabs[idx].isModified = true
-    }
-    
-    func selectTab(_ tab: Tab) {
-        selectedTabId = tab.id
-    }
-    
-    // MARK: - Persistence
-    private let stateKey = "appState"
-    private let backupKey = "crashBackup"
+    func togglePin(_ tab: Tab) { if let idx = tabs.firstIndex(of: tab) { tabs[idx].isPinned.toggle() } }
+    func updateContent(_ content: String) { if let idx = selectedIndex { tabs[idx].content = content; tabs[idx].isModified = true } }
+    func selectTab(_ tab: Tab) { selectedTabId = tab.id }
+    func adjustFontSize(by delta: CGFloat) { fontSize = min(max(fontSize + delta, 10), 32) }
     
     func saveState() {
-        let data = SavedState(tabs: tabs, selectedTabId: selectedTabId, fontSize: fontSize, themeName: theme.name)
-        if let encoded = try? JSONEncoder().encode(data) {
-            UserDefaults.standard.set(encoded, forKey: stateKey)
-        }
+        guard let data = try? JSONEncoder().encode(SavedState(tabs: tabs, selectedTabId: selectedTabId, fontSize: fontSize, themeName: theme.name)) else { return }
+        UserDefaults.standard.set(data, forKey: stateKey)
     }
     
     func loadState() {
-        // Try crash backup first
-        if let backupData = UserDefaults.standard.data(forKey: backupKey),
-           let backup = try? JSONDecoder().decode([Tab].self, from: backupData),
-           !backup.isEmpty {
-            tabs = backup
-            selectedTabId = tabs.first?.id
-            UserDefaults.standard.removeObject(forKey: backupKey)
-            return
-        }
-        
-        // Load saved state
         guard let data = UserDefaults.standard.data(forKey: stateKey),
               let state = try? JSONDecoder().decode(SavedState.self, from: data) else { return }
-        
         tabs = state.tabs
         selectedTabId = state.selectedTabId ?? tabs.first?.id
         fontSize = state.fontSize
         theme = Theme.all.first { $0.name == state.themeName } ?? .dracula
     }
     
-    func saveBackup() {
-        if let encoded = try? JSONEncoder().encode(tabs) {
-            UserDefaults.standard.set(encoded, forKey: backupKey)
-        }
-    }
-    
-    private func setupAutoSave() {
-        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.autoSaveModifiedTabs()
-        }
-    }
-    
-    private func autoSaveModifiedTabs() {
-        for i in tabs.indices where tabs[i].isModified && tabs[i].fileURL != nil {
-            try? tabs[i].content.write(to: tabs[i].fileURL!, atomically: true, encoding: .utf8)
+    private func autoSave() {
+        for i in tabs.indices {
+            guard tabs[i].isModified, let url = tabs[i].fileURL else { continue }
+            try? tabs[i].content.write(to: url, atomically: true, encoding: .utf8)
             tabs[i].isModified = false
         }
     }
 }
 
-// MARK: - Saved State
 private struct SavedState: Codable {
-    let tabs: [Tab]
-    let selectedTabId: UUID?
-    let fontSize: CGFloat
-    let themeName: String
+    let tabs: [Tab], selectedTabId: UUID?, fontSize: CGFloat, themeName: String
 }
