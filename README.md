@@ -23,6 +23,13 @@ A lightweight, beautiful Markdown editor for macOS built with SwiftUI.
 
 ## Installation
 
+### Download DMG (Recommended)
+
+1. Download the latest [Render.md-1.0.0.dmg](https://github.com/Shravanthh/Render.md/releases/latest)
+2. Open the DMG file
+3. Drag Render.md to Applications folder
+4. Launch from Applications
+
 ### Build from Source
 
 ```bash
@@ -38,6 +45,14 @@ The binary will be at `.build/release/MarkdownPreview`
 ```bash
 ./scripts/build-app.sh
 ```
+
+### Create DMG Installer
+
+```bash
+./scripts/create-dmg.sh
+```
+
+The DMG will be created in the `dist/` directory.
 
 ## Keyboard Shortcuts
 
