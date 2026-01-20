@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var replaceText = ""
     @State private var showCloseAlert = false
     @State private var tabToClose: Tab?
+    @State private var splitRatio: CGFloat = 0.5
     
     var body: some View {
         ZStack {
@@ -107,10 +108,10 @@ struct ContentView: View {
                         fontSize: appState.fontSize,
                         theme: appState.theme
                     )
-                    .frame(width: appState.showPreview && !appState.zenMode ? geo.size.width * 0.5 : nil)
+                    .frame(width: appState.showPreview && !appState.zenMode ? geo.size.width * splitRatio : nil)
                     
                     if appState.showPreview && !appState.zenMode {
-                        Divider().background(Color(hex: appState.theme.comment))
+                        DraggableDivider(ratio: $splitRatio, theme: appState.theme)
                         PreviewView(
                             markdown: appState.tabs[idx].content,
                             theme: appState.theme
@@ -225,5 +226,60 @@ struct ContentView: View {
     private func exportPDF() {
         guard let tab = appState.selectedTab else { return }
         FileService.shared.exportPDF(content: tab.content, name: tab.name)
+    }
+}
+
+// MARK: - Draggable Divider
+struct DraggableDivider: View {
+    @Binding var ratio: CGFloat
+    let theme: Theme
+    @State private var isDragging = false
+    @State private var isHovering = false
+    
+    var body: some View {
+        Rectangle()
+            .fill(Color(hex: theme.accent).opacity(isDragging || isHovering ? 0.8 : 0))
+            .frame(width: isDragging || isHovering ? 4 : 1)
+            .overlay(
+                Rectangle()
+                    .fill(Color(hex: theme.comment).opacity(isDragging || isHovering ? 0 : 1))
+                    .frame(width: 1)
+            )
+            .overlay(
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 8)
+                    .contentShape(Rectangle())
+                    .cursor(.resizeLeftRight)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isHovering = hovering
+                        }
+                    }
+            )
+            .animation(.easeInOut(duration: 0.15), value: isDragging)
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        isDragging = true
+                        if let window = NSApp.keyWindow {
+                            let totalWidth = window.contentView?.bounds.width ?? 800
+                            let newRatio = (ratio * totalWidth + value.translation.width) / totalWidth
+                            ratio = min(max(newRatio, 0.2), 0.8)
+                        }
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+    }
+}
+
+extension View {
+    func cursor(_ cursor: NSCursor) -> some View {
+        self.onHover { inside in
+            if inside { cursor.push() } else { NSCursor.pop() }
+        }
     }
 }
