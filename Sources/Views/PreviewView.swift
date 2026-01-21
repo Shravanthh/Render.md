@@ -5,21 +5,51 @@ import Markdown
 struct PreviewView: View {
     let markdown: String
     let theme: Theme
+    @ObservedObject var scrollSync: ScrollSync
     
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(Document(parsing: markdown).children.enumerated()), id: \.offset) { _, block in
-                    BlockView(block: block, theme: theme)
+        GeometryReader { outer in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(Document(parsing: markdown).children.enumerated()), id: \.offset) { idx, block in
+                            BlockView(block: block, theme: theme)
+                                .id(idx)
+                        }
+                        Spacer(minLength: 100)
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(GeometryReader { inner in
+                        Color.clear.preference(key: ScrollOffsetKey.self, value: inner.frame(in: .named("preview")).minY)
+                    })
                 }
-                Spacer(minLength: 100)
+                .coordinateSpace(name: "preview")
+                .onPreferenceChange(ScrollOffsetKey.self) { offset in
+                    guard scrollSync.source != .editor else { return }
+                    let contentHeight = max(1, outer.size.height * 2) // Approximate
+                    let percent = -offset / contentHeight
+                    scrollSync.update(percent: min(max(percent, 0), 1), from: .preview)
+                }
+                .onChange(of: scrollSync.scrollPercent) { percent in
+                    if scrollSync.source == .editor {
+                        let blocks = Array(Document(parsing: markdown).children)
+                        let targetIdx = Int(percent * CGFloat(blocks.count))
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            proxy.scrollTo(min(targetIdx, max(0, blocks.count - 1)), anchor: .top)
+                        }
+                    }
+                }
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(hex: theme.editorBg))
         .foregroundColor(Color(hex: theme.text))
     }
+}
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 struct BlockView: View {

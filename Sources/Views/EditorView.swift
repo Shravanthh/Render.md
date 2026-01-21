@@ -6,6 +6,7 @@ struct EditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat
     var theme: Theme
+    @ObservedObject var scrollSync: ScrollSync
     
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -18,6 +19,10 @@ struct EditorView: NSViewRepresentable {
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        
+        NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.scrollViewDidScroll(_:)),
+                                               name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
         
         DispatchQueue.main.async { textView.applyHighlighting() }
         return scrollView
@@ -35,6 +40,13 @@ struct EditorView: NSViewRepresentable {
             textView.string = text
             textView.selectedRanges = selection
             textView.applyHighlighting()
+        }
+        
+        // Sync scroll from preview
+        if scrollSync.source == .preview {
+            let maxScroll = max(0, (scrollView.documentView?.frame.height ?? 0) - scrollView.contentView.bounds.height)
+            let targetY = maxScroll * scrollSync.scrollPercent
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
         }
     }
     
@@ -70,6 +82,16 @@ struct EditorView: NSViewRepresentable {
             guard let textView = notification.object as? SyntaxTextView else { return }
             parent.text = textView.string
             textView.applyHighlighting()
+        }
+        
+        @objc func scrollViewDidScroll(_ notification: Notification) {
+            guard let clipView = notification.object as? NSClipView,
+                  let scrollView = clipView.superview as? NSScrollView,
+                  let documentView = scrollView.documentView else { return }
+            
+            let maxScroll = max(1, documentView.frame.height - clipView.bounds.height)
+            let percent = clipView.bounds.origin.y / maxScroll
+            parent.scrollSync.update(percent: min(max(percent, 0), 1), from: .editor)
         }
     }
 }

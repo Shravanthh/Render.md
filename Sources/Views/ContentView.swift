@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var findText = ""
     @State private var replaceText = ""
     @State private var splitRatio: CGFloat = 0.5
+    @StateObject private var scrollSync = ScrollSync()
     
     var body: some View {
         ZStack {
@@ -74,13 +75,13 @@ struct ContentView: View {
                 if let idx = appState.selectedIndex {
                     EditorView(
                         text: Binding(get: { appState.tabs[idx].content }, set: appState.updateContent),
-                        fontSize: appState.fontSize, theme: appState.theme
+                        fontSize: appState.fontSize, theme: appState.theme, scrollSync: scrollSync
                     )
                     .frame(width: appState.showPreview && !appState.zenMode ? geo.size.width * splitRatio : nil)
                     
                     if appState.showPreview && !appState.zenMode {
                         DraggableDivider(ratio: $splitRatio, theme: appState.theme)
-                        PreviewView(markdown: appState.tabs[idx].content, theme: appState.theme)
+                        PreviewView(markdown: appState.tabs[idx].content, theme: appState.theme, scrollSync: scrollSync)
                     }
                 }
             }
