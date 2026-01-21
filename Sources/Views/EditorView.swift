@@ -6,7 +6,7 @@ struct EditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat
     var theme: Theme
-    @ObservedObject var scrollSync: ScrollSync
+    var scrollSync: ScrollSync?
     
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -31,6 +31,8 @@ struct EditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? SyntaxTextView else { return }
         
+        context.coordinator.scrollSync = scrollSync
+        
         textView.theme = theme
         textView.backgroundColor = NSColor(Color(hex: theme.editorBg))
         textView.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
@@ -43,9 +45,9 @@ struct EditorView: NSViewRepresentable {
         }
         
         // Sync scroll from preview
-        if scrollSync.source == .preview {
+        if let sync = scrollSync, sync.source == .preview {
             let maxScroll = max(0, (scrollView.documentView?.frame.height ?? 0) - scrollView.contentView.bounds.height)
-            let targetY = maxScroll * scrollSync.scrollPercent
+            let targetY = maxScroll * sync.scrollPercent
             scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
         }
     }
@@ -71,12 +73,16 @@ struct EditorView: NSViewRepresentable {
         textView.defaultParagraphStyle = paragraphStyle
     }
     
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeCoordinator() -> Coordinator { Coordinator(self, scrollSync: scrollSync) }
     
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: EditorView
+        var scrollSync: ScrollSync?
         
-        init(_ parent: EditorView) { self.parent = parent }
+        init(_ parent: EditorView, scrollSync: ScrollSync?) { 
+            self.parent = parent
+            self.scrollSync = scrollSync
+        }
         
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? SyntaxTextView else { return }
@@ -85,13 +91,14 @@ struct EditorView: NSViewRepresentable {
         }
         
         @objc func scrollViewDidScroll(_ notification: Notification) {
-            guard let clipView = notification.object as? NSClipView,
+            guard let sync = scrollSync,
+                  let clipView = notification.object as? NSClipView,
                   let scrollView = clipView.superview as? NSScrollView,
                   let documentView = scrollView.documentView else { return }
             
             let maxScroll = max(1, documentView.frame.height - clipView.bounds.height)
             let percent = clipView.bounds.origin.y / maxScroll
-            parent.scrollSync.update(percent: min(max(percent, 0), 1), from: .editor)
+            sync.update(percent: min(max(percent, 0), 1), from: .editor)
         }
     }
 }

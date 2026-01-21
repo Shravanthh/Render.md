@@ -15,6 +15,7 @@ final class AppState: ObservableObject {
     @Published var folderURL: URL?
     @Published var tabToClose: Tab?
     @Published var showCloseAlert = false
+    @Published var syncScroll = true
     
     var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedTabId } }
     var selectedTab: Tab? { selectedIndex.map { tabs[$0] } }

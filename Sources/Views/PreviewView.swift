@@ -5,7 +5,7 @@ import Markdown
 struct PreviewView: View {
     let markdown: String
     let theme: Theme
-    @ObservedObject var scrollSync: ScrollSync
+    var scrollSync: ScrollSync?
     
     var body: some View {
         GeometryReader { outer in
@@ -26,18 +26,17 @@ struct PreviewView: View {
                 }
                 .coordinateSpace(name: "preview")
                 .onPreferenceChange(ScrollOffsetKey.self) { offset in
-                    guard scrollSync.source != .editor else { return }
-                    let contentHeight = max(1, outer.size.height * 2) // Approximate
+                    guard let sync = scrollSync, sync.source != .editor else { return }
+                    let contentHeight = max(1, outer.size.height * 2)
                     let percent = -offset / contentHeight
-                    scrollSync.update(percent: min(max(percent, 0), 1), from: .preview)
+                    sync.update(percent: min(max(percent, 0), 1), from: .preview)
                 }
-                .onChange(of: scrollSync.scrollPercent) { percent in
-                    if scrollSync.source == .editor {
-                        let blocks = Array(Document(parsing: markdown).children)
-                        let targetIdx = Int(percent * CGFloat(blocks.count))
-                        withAnimation(.easeOut(duration: 0.1)) {
-                            proxy.scrollTo(min(targetIdx, max(0, blocks.count - 1)), anchor: .top)
-                        }
+                .onChange(of: scrollSync?.scrollPercent) { percent in
+                    guard let sync = scrollSync, let p = percent, sync.source == .editor else { return }
+                    let blocks = Array(Document(parsing: markdown).children)
+                    let targetIdx = Int(p * CGFloat(blocks.count))
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo(min(targetIdx, max(0, blocks.count - 1)), anchor: .top)
                     }
                 }
             }

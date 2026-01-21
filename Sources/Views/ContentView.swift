@@ -64,7 +64,7 @@ struct ContentView: View {
                 editorAndPreview
             }
             if !appState.zenMode {
-                StatusBarView(wordCount: appState.wordCount, lineCount: appState.lineCount, theme: appState.theme)
+                StatusBarView(wordCount: appState.wordCount, lineCount: appState.lineCount, theme: appState.theme, syncScroll: $appState.syncScroll)
             }
         }
     }
@@ -75,13 +75,15 @@ struct ContentView: View {
                 if let idx = appState.selectedIndex {
                     EditorView(
                         text: Binding(get: { appState.tabs[idx].content }, set: appState.updateContent),
-                        fontSize: appState.fontSize, theme: appState.theme, scrollSync: scrollSync
+                        fontSize: appState.fontSize, theme: appState.theme, 
+                        scrollSync: appState.syncScroll ? scrollSync : nil
                     )
                     .frame(width: appState.showPreview && !appState.zenMode ? geo.size.width * splitRatio : nil)
                     
                     if appState.showPreview && !appState.zenMode {
                         DraggableDivider(ratio: $splitRatio, theme: appState.theme)
-                        PreviewView(markdown: appState.tabs[idx].content, theme: appState.theme, scrollSync: scrollSync)
+                        PreviewView(markdown: appState.tabs[idx].content, theme: appState.theme, 
+                                    scrollSync: appState.syncScroll ? scrollSync : nil)
                     }
                 }
             }
