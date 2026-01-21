@@ -26,7 +26,10 @@ struct PreviewView: View {
                 let blocks = Array(Document(parsing: markdown).children)
                 guard !blocks.isEmpty else { return }
                 let targetIdx = Int(percent * CGFloat(blocks.count - 1))
-                proxy.scrollTo(max(0, min(targetIdx, blocks.count - 1)), anchor: .top)
+                let clampedIdx = max(0, min(targetIdx, blocks.count - 1))
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(clampedIdx, anchor: .top)
+                }
             }
         }
         .background(Color(hex: theme.editorBg))

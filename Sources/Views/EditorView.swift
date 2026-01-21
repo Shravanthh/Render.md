@@ -100,10 +100,14 @@ struct EditorView: NSViewRepresentable {
             isScrolling = true
             let maxScroll = max(1, documentView.frame.height - clipView.bounds.height)
             let percent = clipView.bounds.origin.y / maxScroll
-            DispatchQueue.main.async {
-                self.parent.scrollPercent = min(max(percent, 0), 1)
+            let newPercent = min(max(percent, 0), 1)
+            
+            // Only update if change is significant
+            if abs(newPercent - parent.scrollPercent) > 0.005 {
+                parent.scrollPercent = newPercent
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 self.isScrolling = false
             }
         }
