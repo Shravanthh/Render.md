@@ -2,155 +2,171 @@
 import SwiftUI
 import Markdown
 
-struct PreviewView: View {
+struct PreviewView: NSViewRepresentable {
     let markdown: String
     let theme: Theme
     @Binding var scrollPercent: CGFloat
     var syncEnabled: Bool
     
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(Array(Document(parsing: markdown).children.enumerated()), id: \.offset) { idx, block in
-                        BlockView(block: block, theme: theme)
-                            .id(idx)
-                    }
-                    Spacer(minLength: 100)
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .onChange(of: scrollPercent) { percent in
-                guard syncEnabled else { return }
-                let blocks = Array(Document(parsing: markdown).children)
-                guard !blocks.isEmpty else { return }
-                let targetIdx = Int(percent * CGFloat(blocks.count))
-                let clampedIdx = max(0, min(targetIdx, blocks.count - 1))
-                proxy.scrollTo(clampedIdx, anchor: .top)
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        let textView = NSTextView()
+        
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 20, height: 20)
+        textView.autoresizingMask = [.width]
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = true
+        
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = NSColor(Color(hex: theme.editorBg))
+        
+        return scrollView
+    }
+    
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        
+        scrollView.backgroundColor = NSColor(Color(hex: theme.editorBg))
+        
+        // Render markdown
+        let attributed = renderMarkdown(markdown, theme: theme)
+        if textView.attributedString() != attributed {
+            textView.textStorage?.setAttributedString(attributed)
+        }
+        
+        // Sync scroll position
+        if syncEnabled {
+            let maxScroll = max(1, (scrollView.documentView?.frame.height ?? 0) - scrollView.contentView.bounds.height)
+            let targetY = maxScroll * scrollPercent
+            let currentY = scrollView.contentView.bounds.origin.y
+            if abs(targetY - currentY) > 5 {
+                scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
             }
         }
-        .background(Color(hex: theme.editorBg))
-        .foregroundColor(Color(hex: theme.text))
     }
-}
-
-struct BlockView: View {
-    let block: any Markup
-    let theme: Theme
     
-    var body: some View {
+    private func renderMarkdown(_ text: String, theme: Theme) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let defaultAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14),
+            .foregroundColor: NSColor(Color(hex: theme.text))
+        ]
+        
+        let doc = Document(parsing: text)
+        for block in doc.children {
+            renderBlock(block, into: result, theme: theme, defaultAttrs: defaultAttrs)
+            result.append(NSAttributedString(string: "\n\n", attributes: defaultAttrs))
+        }
+        return result
+    }
+    
+    private func renderBlock(_ block: any Markup, into result: NSMutableAttributedString, theme: Theme, defaultAttrs: [NSAttributedString.Key: Any]) {
         switch block {
         case let h as Heading:
-            SwiftUI.Text(h.plainText)
-                .font(.system(size: [32, 26, 20, 16, 14, 12][min(h.level - 1, 5)]))
-                .fontWeight(.bold)
-                .foregroundColor(Color(hex: theme.heading))
-                .padding(.top, 8)
-        case let p as Paragraph: InlineText(children: Array(p.children), theme: theme)
-        case let code as CodeBlock: CodeBlockView(code: code, theme: theme)
-        case let list as UnorderedList: UnorderedListView(list: list, theme: theme)
-        case let list as OrderedList: OrderedListView(list: list, theme: theme)
-        case let quote as BlockQuote: QuoteView(quote: quote, theme: theme)
-        case is ThematicBreak: Divider().padding(.vertical, 8)
-        default: SwiftUI.Text(block.format())
-        }
-    }
-}
-
-struct InlineText: View {
-    let children: [any Markup]
-    let theme: Theme
-    
-    var body: some View {
-        children.reduce(SwiftUI.Text("")) { result, child in
-            result + render(child)
-        }
-    }
-    
-    private func render(_ m: any Markup) -> SwiftUI.Text {
-        switch m {
-        case let t as Markdown.Text: return SwiftUI.Text(t.string)
-        case let s as Strong: return SwiftUI.Text(s.plainText).bold().foregroundColor(Color(hex: theme.keyword))
-        case let e as Emphasis: return SwiftUI.Text(e.plainText).italic().foregroundColor(Color(hex: theme.string))
-        case let c as InlineCode: return SwiftUI.Text(c.code).font(.system(.body, design: .monospaced)).foregroundColor(Color(hex: theme.accent))
-        case let l as Markdown.Link: return SwiftUI.Text(l.plainText).foregroundColor(Color(hex: theme.keyword)).underline()
-        case is SoftBreak, is LineBreak: return SwiftUI.Text("\n")
-        default: return SwiftUI.Text(m.format())
-        }
-    }
-}
-
-struct CodeBlockView: View {
-    let code: CodeBlock
-    let theme: Theme
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let lang = code.language {
-                SwiftUI.Text(lang).font(.system(size: 11)).foregroundColor(Color(hex: theme.comment)).padding(.horizontal, 12).padding(.top, 8)
+            let sizes: [CGFloat] = [28, 24, 20, 17, 15, 14]
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: sizes[min(h.level - 1, 5)]),
+                .foregroundColor: NSColor(Color(hex: theme.heading))
+            ]
+            result.append(NSAttributedString(string: h.plainText, attributes: attrs))
+            
+        case let p as Paragraph:
+            for child in p.children {
+                renderInline(child, into: result, theme: theme, defaultAttrs: defaultAttrs)
             }
-            SwiftUI.Text(code.code).font(.system(size: 13, design: .monospaced)).foregroundColor(Color(hex: theme.text)).padding(12)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.3))
-        .cornerRadius(8)
-    }
-}
-
-struct UnorderedListView: View {
-    let list: UnorderedList
-    let theme: Theme
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(list.listItems.enumerated()), id: \.offset) { _, item in
-                HStack(alignment: .top, spacing: 10) {
-                    SwiftUI.Text("•").foregroundColor(Color(hex: theme.accent))
-                    VStack(alignment: .leading) {
-                        ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
-                            if let p = child as? Paragraph { InlineText(children: Array(p.children), theme: theme) }
+            
+        case let code as CodeBlock:
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: NSColor(Color(hex: theme.text)),
+                .backgroundColor: NSColor.black.withAlphaComponent(0.2)
+            ]
+            result.append(NSAttributedString(string: code.code, attributes: attrs))
+            
+        case let list as UnorderedList:
+            for item in list.listItems {
+                result.append(NSAttributedString(string: "• ", attributes: defaultAttrs))
+                for child in item.children {
+                    if let p = child as? Paragraph {
+                        for inline in p.children {
+                            renderInline(inline, into: result, theme: theme, defaultAttrs: defaultAttrs)
                         }
                     }
                 }
+                result.append(NSAttributedString(string: "\n", attributes: defaultAttrs))
             }
-        }
-    }
-}
-
-struct OrderedListView: View {
-    let list: OrderedList
-    let theme: Theme
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(list.listItems.enumerated()), id: \.offset) { idx, item in
-                HStack(alignment: .top, spacing: 10) {
-                    SwiftUI.Text("\(idx + 1).").foregroundColor(Color(hex: theme.accent))
-                    VStack(alignment: .leading) {
-                        ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
-                            if let p = child as? Paragraph { InlineText(children: Array(p.children), theme: theme) }
+            
+        case let list as OrderedList:
+            for (idx, item) in list.listItems.enumerated() {
+                result.append(NSAttributedString(string: "\(idx + 1). ", attributes: defaultAttrs))
+                for child in item.children {
+                    if let p = child as? Paragraph {
+                        for inline in p.children {
+                            renderInline(inline, into: result, theme: theme, defaultAttrs: defaultAttrs)
                         }
                     }
                 }
+                result.append(NSAttributedString(string: "\n", attributes: defaultAttrs))
             }
+            
+        case let quote as BlockQuote:
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 14),
+                .foregroundColor: NSColor(Color(hex: theme.comment))
+            ]
+            for child in quote.children {
+                if let p = child as? Paragraph {
+                    result.append(NSAttributedString(string: "│ ", attributes: attrs))
+                    for inline in p.children {
+                        renderInline(inline, into: result, theme: theme, defaultAttrs: attrs)
+                    }
+                }
+            }
+            
+        default:
+            result.append(NSAttributedString(string: block.format(), attributes: defaultAttrs))
+        }
+    }
+    
+    private func renderInline(_ inline: any Markup, into result: NSMutableAttributedString, theme: Theme, defaultAttrs: [NSAttributedString.Key: Any]) {
+        switch inline {
+        case let t as Markdown.Text:
+            result.append(NSAttributedString(string: t.string, attributes: defaultAttrs))
+        case let s as Strong:
+            var attrs = defaultAttrs
+            attrs[.font] = NSFont.boldSystemFont(ofSize: 14)
+            attrs[.foregroundColor] = NSColor(Color(hex: theme.keyword))
+            result.append(NSAttributedString(string: s.plainText, attributes: attrs))
+        case let e as Emphasis:
+            var attrs = defaultAttrs
+            attrs[.font] = NSFont.systemFont(ofSize: 14).with(traits: .italicFontMask)
+            attrs[.foregroundColor] = NSColor(Color(hex: theme.string))
+            result.append(NSAttributedString(string: e.plainText, attributes: attrs))
+        case let c as InlineCode:
+            var attrs = defaultAttrs
+            attrs[.font] = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            attrs[.foregroundColor] = NSColor(Color(hex: theme.accent))
+            result.append(NSAttributedString(string: c.code, attributes: attrs))
+        case let l as Markdown.Link:
+            var attrs = defaultAttrs
+            attrs[.foregroundColor] = NSColor(Color(hex: theme.keyword))
+            attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            result.append(NSAttributedString(string: l.plainText, attributes: attrs))
+        case is SoftBreak, is LineBreak:
+            result.append(NSAttributedString(string: "\n", attributes: defaultAttrs))
+        default:
+            result.append(NSAttributedString(string: inline.format(), attributes: defaultAttrs))
         }
     }
 }
 
-struct QuoteView: View {
-    let quote: BlockQuote
-    let theme: Theme
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(Color(hex: theme.accent)).frame(width: 4)
-            VStack(alignment: .leading) {
-                ForEach(Array(quote.children.enumerated()), id: \.offset) { _, child in
-                    if let p = child as? Paragraph { InlineText(children: Array(p.children), theme: theme) }
-                }
-            }
-        }
-        .foregroundColor(Color(hex: theme.comment))
+private extension NSFont {
+    func with(traits: NSFontTraitMask) -> NSFont {
+        NSFontManager.shared.convert(self, toHaveTrait: traits)
     }
 }
