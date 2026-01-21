@@ -5,50 +5,33 @@ import Markdown
 struct PreviewView: View {
     let markdown: String
     let theme: Theme
-    var scrollSync: ScrollSync?
+    @Binding var scrollPercent: CGFloat
+    var syncEnabled: Bool
     
     var body: some View {
-        GeometryReader { outer in
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(Array(Document(parsing: markdown).children.enumerated()), id: \.offset) { idx, block in
-                            BlockView(block: block, theme: theme)
-                                .id(idx)
-                        }
-                        Spacer(minLength: 100)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    ForEach(Array(Document(parsing: markdown).children.enumerated()), id: \.offset) { idx, block in
+                        BlockView(block: block, theme: theme)
+                            .id(idx)
                     }
-                    .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(GeometryReader { inner in
-                        Color.clear.preference(key: ScrollOffsetKey.self, value: inner.frame(in: .named("preview")).minY)
-                    })
+                    Spacer(minLength: 100)
                 }
-                .coordinateSpace(name: "preview")
-                .onPreferenceChange(ScrollOffsetKey.self) { offset in
-                    guard let sync = scrollSync, sync.source != .editor else { return }
-                    let contentHeight = max(1, outer.size.height * 2)
-                    let percent = -offset / contentHeight
-                    sync.update(percent: min(max(percent, 0), 1), from: .preview)
-                }
-                .onChange(of: scrollSync?.scrollPercent) { percent in
-                    guard let sync = scrollSync, let p = percent, sync.source == .editor else { return }
-                    let blocks = Array(Document(parsing: markdown).children)
-                    let targetIdx = Int(p * CGFloat(blocks.count))
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        proxy.scrollTo(min(targetIdx, max(0, blocks.count - 1)), anchor: .top)
-                    }
-                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onChange(of: scrollPercent) { percent in
+                guard syncEnabled else { return }
+                let blocks = Array(Document(parsing: markdown).children)
+                guard !blocks.isEmpty else { return }
+                let targetIdx = Int(percent * CGFloat(blocks.count - 1))
+                proxy.scrollTo(max(0, min(targetIdx, blocks.count - 1)), anchor: .top)
             }
         }
         .background(Color(hex: theme.editorBg))
         .foregroundColor(Color(hex: theme.text))
     }
-}
-
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 struct BlockView: View {

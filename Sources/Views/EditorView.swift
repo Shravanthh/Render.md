@@ -4,9 +4,10 @@ import AppKit
 
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
+    @Binding var scrollPercent: CGFloat
     var fontSize: CGFloat
     var theme: Theme
-    var scrollSync: ScrollSync?
+    var syncEnabled: Bool
     
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -31,7 +32,7 @@ struct EditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? SyntaxTextView else { return }
         
-        context.coordinator.scrollSync = scrollSync
+        context.coordinator.parent = self
         
         textView.theme = theme
         textView.backgroundColor = NSColor(Color(hex: theme.editorBg))
@@ -44,11 +45,14 @@ struct EditorView: NSViewRepresentable {
             textView.applyHighlighting()
         }
         
-        // Sync scroll from preview
-        if let sync = scrollSync, sync.source == .preview {
-            let maxScroll = max(0, (scrollView.documentView?.frame.height ?? 0) - scrollView.contentView.bounds.height)
-            let targetY = maxScroll * sync.scrollPercent
-            scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+        // Sync scroll from preview (only if not currently scrolling editor)
+        if syncEnabled && !context.coordinator.isScrolling {
+            let maxScroll = max(1, (scrollView.documentView?.frame.height ?? 0) - scrollView.contentView.bounds.height)
+            let currentPercent = scrollView.contentView.bounds.origin.y / maxScroll
+            if abs(currentPercent - scrollPercent) > 0.01 {
+                let targetY = maxScroll * scrollPercent
+                scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+            }
         }
     }
     
@@ -73,16 +77,13 @@ struct EditorView: NSViewRepresentable {
         textView.defaultParagraphStyle = paragraphStyle
     }
     
-    func makeCoordinator() -> Coordinator { Coordinator(self, scrollSync: scrollSync) }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
     
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: EditorView
-        var scrollSync: ScrollSync?
+        var isScrolling = false
         
-        init(_ parent: EditorView, scrollSync: ScrollSync?) { 
-            self.parent = parent
-            self.scrollSync = scrollSync
-        }
+        init(_ parent: EditorView) { self.parent = parent }
         
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? SyntaxTextView else { return }
@@ -91,14 +92,20 @@ struct EditorView: NSViewRepresentable {
         }
         
         @objc func scrollViewDidScroll(_ notification: Notification) {
-            guard let sync = scrollSync,
+            guard parent.syncEnabled,
                   let clipView = notification.object as? NSClipView,
                   let scrollView = clipView.superview as? NSScrollView,
                   let documentView = scrollView.documentView else { return }
             
+            isScrolling = true
             let maxScroll = max(1, documentView.frame.height - clipView.bounds.height)
             let percent = clipView.bounds.origin.y / maxScroll
-            sync.update(percent: min(max(percent, 0), 1), from: .editor)
+            DispatchQueue.main.async {
+                self.parent.scrollPercent = min(max(percent, 0), 1)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                self.isScrolling = false
+            }
         }
     }
 }
