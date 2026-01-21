@@ -5,8 +5,6 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @State private var findText = ""
     @State private var replaceText = ""
-    @State private var showCloseAlert = false
-    @State private var tabToClose: Tab?
     @State private var splitRatio: CGFloat = 0.5
     
     var body: some View {
@@ -25,14 +23,14 @@ struct ContentView: View {
         .onDisappear { appState.saveState() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in appState.isFullscreen = true }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in appState.isFullscreen = false }
-        .alert("Unsaved Changes", isPresented: $showCloseAlert) {
-            Button("Save") { saveAndClose() }
-            Button("Don't Save", role: .destructive) { forceClose() }
-            Button("Cancel", role: .cancel) { tabToClose = nil }
-        } message: { Text("Save changes to \"\(tabToClose?.name ?? "")\"?") }
+        .alert("Unsaved Changes", isPresented: $appState.showCloseAlert) {
+            Button("Save") { appState.saveAndCloseTab() }
+            Button("Don't Save", role: .destructive) { appState.forceCloseTab() }
+            Button("Cancel", role: .cancel) { appState.tabToClose = nil }
+        } message: { Text("Save changes to \"\(appState.tabToClose?.name ?? "")\"?") }
         .background(KeyboardHandler(
             onNewTab: appState.newTab,
-            onCloseTab: { confirmClose() },
+            onCloseTab: { appState.requestCloseTab() },
             onSave: saveCurrentTab,
             onFind: { appState.showFind.toggle() },
             onTogglePreview: { appState.showPreview.toggle() },
@@ -48,7 +46,7 @@ struct ContentView: View {
             if !appState.zenMode {
                 TabBarView(
                     tabs: appState.sortedTabs, selectedId: appState.selectedTabId, theme: appState.theme,
-                    onSelect: appState.selectTab, onClose: { confirmClose($0) }, onPin: appState.togglePin,
+                    onSelect: appState.selectTab, onClose: { appState.requestCloseTab($0) }, onPin: appState.togglePin,
                     onNewTab: appState.newTab, onToggleSidebar: { withAnimation { appState.showSidebar.toggle() } }
                 )
                 if appState.showFind {
@@ -92,6 +90,7 @@ struct ContentView: View {
     private var commandActions: [(String, String, () -> Void)] {
         [
             ("New Tab", "⌘T", appState.newTab),
+            ("Close Tab", "⌘W", { appState.requestCloseTab() }),
             ("Open File", "⌘O", openFiles),
             ("Save", "⌘S", saveCurrentTab),
             ("Toggle Preview", "⌘P", { appState.showPreview.toggle() }),
@@ -105,22 +104,6 @@ struct ContentView: View {
     }
     
     // MARK: - Actions
-    private func confirmClose(_ tab: Tab? = nil) {
-        guard let t = tab ?? appState.selectedTab else { return }
-        if t.isModified { tabToClose = t; showCloseAlert = true } else { appState.closeTab(t) }
-    }
-    
-    private func forceClose() {
-        guard let tab = tabToClose else { return }
-        appState.closeTab(tab); tabToClose = nil
-    }
-    
-    private func saveAndClose() {
-        guard let tab = tabToClose, let idx = appState.tabs.firstIndex(of: tab), let url = appState.tabs[idx].fileURL else { return forceClose() }
-        _ = FileService.shared.save(content: appState.tabs[idx].content, to: url)
-        forceClose()
-    }
-    
     private func saveCurrentTab() {
         guard let idx = appState.selectedIndex else { return }
         if let url = appState.tabs[idx].fileURL {

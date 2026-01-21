@@ -13,6 +13,8 @@ final class AppState: ObservableObject {
     @Published var zenMode = false
     @Published var isFullscreen = false
     @Published var folderURL: URL?
+    @Published var tabToClose: Tab?
+    @Published var showCloseAlert = false
     
     var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedTabId } }
     var selectedTab: Tab? { selectedIndex.map { tabs[$0] } }
@@ -42,6 +44,27 @@ final class AppState: ObservableObject {
     func updateContent(_ content: String) { if let idx = selectedIndex { tabs[idx].content = content; tabs[idx].isModified = true } }
     func selectTab(_ tab: Tab) { selectedTabId = tab.id }
     func adjustFontSize(by delta: CGFloat) { fontSize = min(max(fontSize + delta, 10), 32) }
+    
+    func requestCloseTab(_ tab: Tab? = nil) {
+        let target = tab ?? selectedTab
+        guard let t = target else { return }
+        if t.isModified { tabToClose = t; showCloseAlert = true } else { closeTab(t) }
+    }
+    
+    func forceCloseTab() {
+        guard let tab = tabToClose else { return }
+        closeTab(tab); tabToClose = nil
+    }
+    
+    func saveAndCloseTab() {
+        guard let tab = tabToClose, let idx = tabs.firstIndex(of: tab) else { return }
+        if let url = tabs[idx].fileURL {
+            _ = FileService.shared.save(content: tabs[idx].content, to: url)
+        } else if let url = FileService.shared.saveAs(content: tabs[idx].content, suggestedName: tabs[idx].name) {
+            tabs[idx].fileURL = url
+        }
+        forceCloseTab()
+    }
     
     func saveState() {
         guard let data = try? JSONEncoder().encode(SavedState(tabs: tabs, selectedTabId: selectedTabId, fontSize: fontSize, themeName: theme.name)) else { return }

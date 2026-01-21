@@ -14,6 +14,7 @@ struct RenderMDApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") { appState.newTab() }.keyboardShortcut("t")
+                Button("Close Tab") { appState.requestCloseTab() }.keyboardShortcut("w")
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Save") { saveCurrentTab() }.keyboardShortcut("s")
